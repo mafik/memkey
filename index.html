@@ -1,0 +1,176 @@
+<!doctype html>
+<title>MemKey</title>
+<style>
+html {
+font-family: courier;
+}
+textarea, input {
+    font-family: inherit;
+    font-size: inherit;
+    padding: .1em;
+    margin: 0 .1em;
+    border: 1px solid black;
+}
+#queue {
+    text-align: right;;
+    font-size: 1.5em;
+    width: auto;
+    height: 2em;
+    border: 1px solid black;
+    line-height: 2em;
+    margin: 0 auto;
+    margin-left: .5em;
+    vertical-align:middle;
+    color: #888;
+}
+#queue > span {
+    margin: 0 .3em;
+}
+#active {
+    font-weight: bold;
+    color: red;
+}
+</style>
+<body>
+<h1>MemKey</h1>
+<p>This site will teach you how to write FAST.
+It's the best of its kind because of use of spaced repetition - which is the fastest
+way to memorize just about anything.
+Press the keys shown below as
+fast as you can. Once your average time goes below <input id="target" value="900" size=5>
+ms and stays there for some time you'll start seeing new keys.</p>
+<p>This speed should equal to <span id=wpm></span> WPM on
+completely random letters and around three times as much on real text.</p>
+<p>New keys will be taken from this sequence (you can
+modify it to match your language or keyboard layout):
+<textarea id=keys rows=2 cols=40>fjdksla;'cmvnbghx,z./rutyeiwoqp[]\</textarea>.</p>
+<p>Your progress will be saved so you can come back anytime and start where
+you left off.</p>
+<p>Here are your letters:</p>
+<div id=queue></div>
+<audio id=good src=good.wav></audio>
+<audio id=bad src=bad.wav></audio>
+<h2>Stats</h2>
+<div id=stat_div>
+</div>
+<script>
+var stats = {};
+if(localStorage.stats) {
+    stats = JSON.parse(localStorage.stats);
+}
+if(localStorage.target) {
+    target.value = localStorage.target;
+}
+var keys = document.getElementById('keys');
+if(localStorage.keys) {
+    keys.value = localStorage.keys;
+}
+function update_keys() {
+    for(var i = 0; i < keys.value.length; ++i) {
+        var key = letter_name(keys.value[i]);
+        if(typeof stats[key] === 'undefined') {
+            stats[key] = {
+                time: Number(target.value) * 2,
+                memory: 0,
+                next_presentation: +new Date
+            };
+        }
+    }
+    print_stats();
+
+}
+keys.oninput = function() {
+    localStorage.keys = keys.value;
+    update_keys();
+};
+update_keys();
+var wpm = document.getElementById('wpm');
+function update_wpm() {
+    localStorage.target = target.value;
+    wpm.textContent = Math.round(60 * 1000 / Number(target.value) / 5);
+}
+function letter_name(char) {
+    if(char == ' ') return 'space';
+    if(char == '\n') return 'return';
+    if(char == '\r') return 'return';
+    return char;
+}
+target.oninput = update_wpm;
+update_wpm();
+var last_press = +new Date;
+function print_stats() {
+    stat_div.innerHTML = '';
+    for(var i = 0; i < keys.value.length; ++i) {
+        var key = letter_name(keys.value[i]);
+        stat_div.innerHTML += key + ": avg time to press=" + Math.round(stats[key].time) + "ms, repetition spacing="+Math.round(stats[key].memory)+"ms<br>";
+    }
+    localStorage.stats = JSON.stringify(stats);
+}
+print_stats();
+function find_letter() {
+    var now = +new Date;
+    var best_key = 'ERROR';
+    var best_time = +new Date + 1000 * 3600 * 24 * 365;
+    for(var i = 0; i < keys.value.length; ++i) {  // walk from the start of the sequence
+        var key = letter_name(keys.value[i]);
+        var present = false;
+        for(var j = 0; j < queue.childElementCount; ++j) {
+            if(queue.children[j].textContent == key) {
+                present = true;
+            }
+        }
+        if(present) continue;  // skip keys already in queue
+        var s = stats[key];
+        if(s.next_presentation < now) {
+            return key;
+        } else if(s.next_presentation < best_time) {
+            best_time = s.next_presentation;
+            best_key = key;
+        }
+    }
+    return best_key;
+}
+for(var i = 0; i < 7; ++i) {
+    queue.innerHTML += "<span>" + find_letter() + "</span>";
+}
+queue.children[0].id = 'active';
+
+function show_next() {
+    // 2. find letter to show and replace active with it. activate next one
+    active.textContent = '';
+    var key = find_letter();
+    active.textContent = key;
+    var next = active.nextSibling;
+    active.id = '';
+    if(next) {
+        next.id = 'active';
+    } else {
+        queue.children[0].id = 'active';
+    }
+}
+document.addEventListener('keypress', function(e) {
+    if(e.target !== document.body) return;
+    e.preventDefault();
+    var pressed = letter_name(String.fromCharCode(e.which));
+    var now = +new Date;
+    var k = active.textContent;
+    var s = stats[k];
+    if(pressed == k) {
+        var delta = now - last_press;
+        if(delta < 10000) {
+            s.time = s.time*2/3 + delta/3;
+            // if time is below target - increase memory, otherwise decrease (but not lower than 0)
+            s.memory += Number(target.value) - s.time;
+            new Audio("good.wav").play();
+        }
+    } else {
+        s.memory -= Number(target.value) * 3;
+        new Audio("bad.wav").play();
+    }
+    s.memory = Math.max(0, s.memory);
+    s.next_presentation = now + s.memory;
+    last_press = now;
+    print_stats();
+    show_next();
+}, false);
+</script>
